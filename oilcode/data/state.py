@@ -19,9 +19,18 @@ from oilcode.contracts import DataQuality, Measurement, ProcessState
 from oilcode.data import loaders
 
 
-def _last_before(df: pd.DataFrame, ts: pd.Timestamp) -> pd.Series | None:
-    """Последняя запись не позже ts. Ничего из будущего."""
-    past = df[df["timestamp"] <= ts]
+def _last_before(df: pd.DataFrame, ts: pd.Timestamp,
+                 delay_h: float = 0.0) -> pd.Series | None:
+    """Последняя запись, которая к моменту ts уже была ИЗВЕСТНА.
+
+    delay_h — задержка между измерением и его появлением в системе.
+    Для ЛИМС это 4 часа (метка времени = момент отбора пробы, результат
+    публикуется позже). Без этой поправки мы используем лабораторный
+    результат раньше, чем его мог увидеть оператор, — то есть подглядываем
+    в будущее, что ТЗ прямо запрещает.
+    """
+    available_at = df["timestamp"] + pd.Timedelta(hours=delay_h)
+    past = df[available_at <= ts]
     if past.empty:
         return None
     return past.iloc[-1]
@@ -65,9 +74,11 @@ def build_process_state(timestamp: str | datetime) -> ProcessState:
     target_group = config.LIMS_POINTS[config.TARGET_POINT]
     for metric in sorted(lims[lims["group"] == target_group]["metric"].unique()):
         subset = lims[(lims["group"] == target_group) & (lims["metric"] == metric)]
-        last = _last_before(subset, ts)
+        last = _last_before(subset, ts, delay_h=config.LIMS_PUBLICATION_DELAY_H)
         if last is None:
             continue
+        # Возраст считаем от момента отбора: оператору важно, насколько
+        # устарела сама проба, а не когда её напечатали.
         age_h = (ts - last["timestamp"]).total_seconds() / 3600
         quality[metric] = Measurement(
             value=float(last["value"]),

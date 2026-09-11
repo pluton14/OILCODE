@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from oilcode import config
+from oilcode.agents.blending import BlendingAgent
 from oilcode.agents.optimization import OptimizationAgent
 from oilcode.agents.quality import QualityAgent
 from oilcode.agents.reliability import ReliabilityAgent
@@ -27,7 +28,8 @@ class Orchestrator:
     def __init__(self):
         self.quality_agent = QualityAgent()
         self.reliability_agent = ReliabilityAgent()
-        self.optimization_agent = OptimizationAgent()
+        self.blending_agent = BlendingAgent()
+        self.optimization_agent = OptimizationAgent(blending=self.blending_agent)
         self._fitted = False
 
     def fit(self) -> "Orchestrator":
@@ -65,18 +67,45 @@ class Orchestrator:
         optimization = self.optimization_agent.optimize(state, quality, reliability)
 
         rec.constraints_checked = [
-            f"сера <= {config.HARD_LIMITS['sulfur_mg_kg_max']} мг/кг",
+            f"товарный продукт: сера <= {config.PRODUCT_SPEC['sulfur_mg_kg_max']} мг/кг",
+            f"товарный продукт: Т95 <= {config.PRODUCT_SPEC['t95_max_c']} C",
+            f"товарный продукт: цетановое число >= {config.PRODUCT_SPEC['cetane_min']}",
+            "доли компонентов блендинга в сумме 100%, присадка не более 3%",
             "изменения в пределах модельных ограничений агента надёжности",
         ]
         rec.confidence = self._describe_confidence(state, quality)
 
         # --- Шаг 3: есть ли проблема вообще? -------------------------------
+        # Напоминание: сера на выходе ГО выше 10 мг/кг сама по себе НЕ авария.
+        # Норма относится к товарному продукту после блендинга.
         risk = quality.spec_risk.get(config.TARGET_METRIC)
+        sulfur_now = state.quality.get(config.TARGET_METRIC)
         problems = []
+
         if risk and risk.exceeds_limit:
-            problems.append(f"ПРЕВЫШЕНИЕ: сера {risk.margin * -1:.2f} мг/кг сверх предела")
-        elif risk and risk.level in ("high", "medium"):
-            problems.append(f"риск по сере, запас всего {risk.margin:.2f} мг/кг")
+            problems.append(
+                f"сера на выходе ГО {sulfur_now.value:.2f} мг/кг — блендинг уже "
+                f"не вытянет смесь в спецификацию"
+            )
+        elif risk and risk.level == "high":
+            problems.append(
+                f"запас до предела смешиваемости всего {risk.margin:.2f} мг/кг"
+            )
+
+        # Переочистка — это тоже проблема, только экономическая: лишняя
+        # глубина обессеривания оплачена энергией, а спецификация её не
+        # требует. Судим не по произвольному порогу серы, а по деньгам:
+        # насколько дешевле стала бы смесь при лучшем режиме.
+        saving = 0.0
+        if optimization.feasible and optimization.baseline_score is not None:
+            best_score = optimization.best.score if optimization.best else 0.0
+            saving = best_score - optimization.baseline_score
+            if saving > config.ECONOMICS["min_saving_to_act"]:
+                problems.append(
+                    f"режим дороже необходимого: смягчение сэкономит "
+                    f"{saving:.4f} усл.ед./т при сохранении спецификации"
+                )
+
         if reliability.severity_class != "normal":
             problems.append(
                 f"тяжёлый режим (индекс {reliability.severity_index}): "
@@ -116,21 +145,41 @@ class Orchestrator:
         best = optimization.best
         rec.status = "recommendation"
         rec.action = best.changes
+
+        # Показываем обе стадии: что будет на выходе ГО и что получится
+        # в товарном продукте после смешения.
+        blend = self.blending_agent.solve({
+            "sulfur_mg_kg": best.predicted_quality.get(config.TARGET_METRIC),
+            "t95_c": best.predicted_quality.get("t95_c", 357.0),
+            "cetane": best.predicted_quality.get("cetane", 51.0),
+        })
         rec.expected_effect = {
-            "качество": f"сера {best.predicted_quality.get(config.TARGET_METRIC)} мг/кг "
-                        f"(предел {config.HARD_LIMITS['sulfur_mg_kg_max']})",
+            "сера на выходе ГО": f"{best.predicted_quality.get(config.TARGET_METRIC)} мг/кг",
             "выпуск": f"{best.throughput_delta_pct:+.1f}%",
             "энергия (прокси)": f"{best.energy_proxy_delta:+.1f}%",
             "риск оборудования": f"индекс {best.predicted_severity}",
         }
+        if blend.feasible:
+            b = blend.best
+            recipe = ", ".join(f"{k} {v:.0%}" for k, v in b.fractions.items())
+            rec.expected_effect["товарный продукт"] = (
+                f"сера {b.blended['sulfur_mg_kg']} мг/кг, "
+                f"Т95 {b.blended['t95_c']} C, цетан {b.blended['cetane']}"
+            )
+            rec.expected_effect["рецептура блендинга"] = recipe
+            if b.improver_pct:
+                rec.expected_effect["цетаноповышающая присадка"] = f"{b.improver_pct}%"
+            rec.expected_effect["стоимость смеси"] = f"{b.cost:.4f} усл.ед./т"
         rejected = [s for s in optimization.scenarios if not s.hard_constraints_passed]
         rec.alternatives = [s for s in optimization.scenarios
                             if s.hard_constraints_passed and s.id != best.id][:3]
         rec.explanation = (
             f"Из {len(optimization.scenarios)} рассмотренных вариантов "
             f"{len(rejected)} отброшено по жёстким ограничениям. "
-            f"Выбран «{best.id}»: он даёт наибольший запас по сере при "
-            f"приемлемом риске для оборудования."
+            f"Выбран «{best.id}»: среди прошедших спецификацию он даёт "
+            f"наименьшую суммарную стоимость с учётом платы за риск для "
+            f"катализатора. Больший запас по сере здесь не нужен — он означал "
+            f"бы переочистку за счёт лишних энергозатрат."
         )
         return rec
 

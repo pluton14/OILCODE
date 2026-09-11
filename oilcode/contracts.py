@@ -147,6 +147,33 @@ class Scenario:
 
 
 @dataclass
+class BlendRecipe:
+    """Рецептура смешения товарного ДТ.
+
+    Доли резервуаров обязаны давать 100%, присадка дозируется сверх этого
+    и ограничена 3% по массе.
+    """
+
+    fractions: dict[str, float] = field(default_factory=dict)  # доли, сумма = 1.0
+    improver_pct: float = 0.0
+    blended: dict[str, float] = field(default_factory=dict)  # сера, Т95, цетан
+    cost: float = 0.0
+    meets_spec: bool = False
+    violations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class BlendingResult:
+    """Выход агента блендинга."""
+
+    feasible: bool = False
+    best: BlendRecipe | None = None
+    considered: int = 0
+    rejection_reason: str | None = None
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
 class OptimizationResult:
     """Выход агента оптимизации."""
 
@@ -154,6 +181,9 @@ class OptimizationResult:
     scenarios: list[Scenario] = field(default_factory=list)
     best_scenario_id: str | None = None
     rejection_reason: str | None = None
+    # Сценарий "ничего не менять" — точка отсчёта, с которой сравнивается
+    # выгода от вмешательства.
+    baseline_score: float | None = None
 
     @property
     def best(self) -> Scenario | None:

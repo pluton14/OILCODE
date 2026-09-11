@@ -91,7 +91,8 @@ class ReliabilityAgent:
                 ))
 
             # Ограничение для агента оптимизации: не разгонять сигнал дальше p95.
-            if tag in config.CONTROLS:
+            control_tags = {m["tag"] for m in config.CONTROLS.values()}
+            if tag in control_tags:
                 out.constraints.append(Constraint(
                     tag=tag,
                     max=q["p95"],
