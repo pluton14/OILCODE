@@ -266,11 +266,17 @@ class DataAgent:
     # ==================================================================
 
     def export_agent_datasets(self, out_dir: Path | None = None) -> dict[str, Path]:
-        """Выгрузить три файла: короткий горизонт, длинный горизонт, лаборатория.
+        """Выгрузить готовые датасеты — коллеги берут файл и работают, без
 
-        Возвращает {имя: путь}. Каждый файл — временной ряд с меткой времени
-        в индексе, заглушки 307/251 уже заменены на пусто, добавлен флаг
-        "установка работает" на каждый момент.
+        дополнительной чистки у себя. Заглушки 307/251 уже заменены на пусто,
+        колонка usable_<установка> уже учитывает и остановку, и мусор первых
+        суток после пуска — можно просто отфильтровать `df[df.usable_...]`
+        и не открывать excluded_periods.csv вообще (он остаётся как
+        расшифровка/аудит, откуда взялся флаг, а не как обязательный шаг).
+
+        Позже данные переедут в Postgres — тогда usable_* станет колонкой
+        в таблице или отдельным вьюхом, а не файлом, но сам признак
+        (учтён простой + сутки после пуска) переносится без изменений.
         """
         out_dir = out_dir or config.CACHE
         out_dir.mkdir(exist_ok=True)
@@ -278,18 +284,132 @@ class DataAgent:
         telemetry = loaders.load_telemetry().set_index("timestamp")
         telemetry = telemetry.replace(list(config.SENTINEL_VALUES), pd.NA)
         running = self._running_flags_series(telemetry)
+        usable = self._usable_flags_series(telemetry, running)
 
         paths = {
             "quality_telemetry": self._export_tag_slice(
-                telemetry, running, config.QUALITY_AGENT_TAGS,
+                telemetry, usable, config.QUALITY_AGENT_TAGS,
                 out_dir / "quality_agent_telemetry.csv"),
             "reliability_telemetry": self._export_tag_slice(
-                telemetry, running, config.RELIABILITY_AGENT_TAGS,
+                telemetry, usable, config.RELIABILITY_AGENT_TAGS,
                 out_dir / "reliability_agent_telemetry.csv"),
             "quality_lab_measurements": self._export_lab_measurements(
                 out_dir / "quality_agent_lab_measurements.csv"),
+            "excluded_periods": self._export_excluded_periods(
+                running, out_dir / "excluded_periods.csv"),
+            "tag_manifest": self._export_tag_manifest(
+                out_dir / "tag_manifest.csv"),
         }
         return paths
+
+    @classmethod
+    def _usable_flags_series(cls, telemetry: pd.DataFrame,
+                             running: pd.DataFrame) -> pd.DataFrame:
+        """Один готовый флаг на установку: работает И не в первые сутки после пуска.
+
+        Это то, что реально попадает в файлы агентов — колонка usable_<unit>.
+        running (is_running_*) остаётся только сырьём для этого расчёта и
+        для excluded_periods.csv, наружу в основные файлы не идёт: два
+        похожих флага на одну и ту же вещь — лишняя путаница у потребителя.
+        """
+        usable = pd.DataFrame(index=telemetry.index)
+        buf = pd.Timedelta(hours=config.STARTUP_BUFFER_HOURS)
+        for unit in config.UNIT_FLOW_TAGS:
+            col = f"is_running_{unit}"
+            if col not in running.columns:
+                continue
+            flag = running[col].fillna(False).copy()
+            for _, end in cls._false_runs(running[col]):
+                flag.loc[(telemetry.index > end) & (telemetry.index <= end + buf)] = False
+            usable[f"usable_{unit}"] = flag
+        return usable
+
+    @staticmethod
+    def _false_runs(flag: pd.Series) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+        """Границы непрерывных участков, где flag == False, очищенные от шума.
+
+        На шаге 10 минут одиночный шумовой провал расхода тоже помечается
+        "не работает" — без сглаживания три настоящих остановки тонут в
+        десятках ложных 10-30-минутных. Поэтому: сначала близкие провалы
+        (разрыв короче MERGE_OUTAGE_GAP_HOURS) объединяются в один, потом
+        всё короче MIN_OUTAGE_HOURS отбрасывается как измерительный шум.
+        """
+        down = ~flag.fillna(False)
+        if not down.any():
+            return []
+        group = (down != down.shift()).cumsum()
+        raw = [(idx.min(), idx.max()) for _, idx in down[down].groupby(group[down]).groups.items()]
+        raw.sort()
+
+        merged: list[list[pd.Timestamp]] = []
+        gap = pd.Timedelta(hours=config.MERGE_OUTAGE_GAP_HOURS)
+        for start, end in raw:
+            if merged and start - merged[-1][1] <= gap:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+
+        min_dur = pd.Timedelta(hours=config.MIN_OUTAGE_HOURS)
+        return [(s, e) for s, e in merged if e - s >= min_dur]
+
+    @classmethod
+    def _export_excluded_periods(cls, running: pd.DataFrame, path: Path) -> Path:
+        """Даты, которые нужно исключить, — таблицей, а не абзацем текста.
+
+        Две причины исключения:
+          outage  — установка физически стояла (расход ниже порога);
+          startup — первые STARTUP_BUFFER_HOURS после пуска: линия ещё не
+                    вышла на режим, значения переходные (см. случай
+                    23.04.2024, где сера скакнула до 2120 мг/кг).
+        Оба типа выводятся ИЗ ДАННЫХ на каждый запуск экспорта — не список
+        захардкоженных дат, значит не может разъехаться с фактическим рядом.
+        """
+        rows = []
+        for unit in config.UNIT_FLOW_TAGS:
+            col = f"is_running_{unit}"
+            if col not in running.columns:
+                continue
+            for start, end in cls._false_runs(running[col]):
+                rows.append({"unit": unit, "kind": "outage",
+                            "start": start, "end": end,
+                            "duration_h": (end - start).total_seconds() / 3600})
+                startup_end = end + pd.Timedelta(hours=config.STARTUP_BUFFER_HOURS)
+                rows.append({"unit": unit, "kind": "startup",
+                            "start": end, "end": startup_end,
+                            "duration_h": config.STARTUP_BUFFER_HOURS})
+        out = pd.DataFrame(rows).sort_values(["unit", "start"])
+        out.to_csv(path, index=False, encoding="utf-8-sig")
+        return path
+
+    @staticmethod
+    def _export_tag_manifest(path: Path) -> Path:
+        """Один тег — одна строка: кому нужен, что значит, когда действителен.
+
+        Периоды, которые нужно исключить для этого тега, — в excluded_periods.csv
+        по колонке unit (совпадает с колонкой unit здесь), не дублируются.
+        """
+        telemetry = loaders.load_telemetry()
+        dataset_from = telemetry["timestamp"].min()
+        dataset_to = telemetry["timestamp"].max()
+
+        by_key: dict[str, dict] = {}
+        for tags, consumer in ((config.QUALITY_AGENT_TAGS, "quality"),
+                               (config.RELIABILITY_AGENT_TAGS, "reliability")):
+            for tag, unit, desc in tags:
+                key = config.tag_key(tag, unit)
+                row = by_key.setdefault(key, {
+                    "tag_key": key, "tag": tag, "unit": unit, "desc": desc,
+                    "consumer": set(), "valid_from": dataset_from,
+                    "valid_to": dataset_to,
+                })
+                row["consumer"].add(consumer)
+
+        out = pd.DataFrame([
+            {**r, "consumer": "+".join(sorted(r["consumer"]))}
+            for r in by_key.values()
+        ]).sort_values(["consumer", "tag_key"])
+        out.to_csv(path, index=False, encoding="utf-8-sig")
+        return path
 
     @staticmethod
     def _running_flags_series(telemetry: pd.DataFrame) -> pd.DataFrame:
@@ -310,17 +430,17 @@ class DataAgent:
         return flags
 
     @staticmethod
-    def _export_tag_slice(telemetry: pd.DataFrame, running: pd.DataFrame,
+    def _export_tag_slice(telemetry: pd.DataFrame, usable: pd.DataFrame,
                           tag_specs: list[tuple[str, str, str]], path: Path) -> Path:
-        """Срез телеметрии ровно по декларированным тегам + флаги простоя.
+        """Срез телеметрии ровно по декларированным тегам + готовый флаг usable_*.
 
         Заголовок колонки = tag_key (например HT_T5) — расшифровка физического
-        смысла каждого тега лежит в config.py рядом с tag_specs, здесь её
-        сознательно нет, чтобы файл был чистым числовым рядом для обучения.
+        смысла каждого тега в tag_manifest.csv, здесь её сознательно нет,
+        чтобы файл был чистым числовым рядом для обучения.
         """
         keys = [config.tag_key(t, u) for t, u, _ in tag_specs]
         keys = [k for k in keys if k in telemetry.columns]
-        out = telemetry[keys].join(running)
+        out = telemetry[keys].join(usable)
         out.to_csv(path, encoding="utf-8-sig")
         return path
 

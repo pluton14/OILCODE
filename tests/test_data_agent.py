@@ -101,12 +101,26 @@ def test_export_agent_datasets_has_no_sentinels_and_flags_outages(tmp_path):
                 f"заглушка {sentinel} просочилась в экспорт — "
                 "агент качества/надёжности примет её за измерение"
             )
-        assert "is_running_AVT" in df.columns
-        assert "is_running_24-2000" in df.columns
+        assert "usable_AVT" in df.columns
+        assert "usable_24-2000" in df.columns
 
-    assert (reliability["is_running_AVT"] == False).any(), (
+    assert (reliability["usable_AVT"] == False).any(), (
         "в истории есть известная остановка АВТ — экспорт обязан её сохранить"
     )
+
+    excluded = pd.read_csv(paths["excluded_periods"])
+    assert set(excluded["kind"]) == {"outage", "startup"}
+    assert (excluded["duration_h"] >= 0).all()
+    # После фильтра шума короче MIN_OUTAGE_HOURS быть не должно — иначе
+    # десятки шумовых провалов на 10-30 минут завалят настоящие остановки.
+    real_outages = excluded[excluded["kind"] == "outage"]
+    assert (real_outages["duration_h"] >= config.MIN_OUTAGE_HOURS).all()
+
+    manifest = pd.read_csv(paths["tag_manifest"])
+    assert set(manifest["consumer"]) <= {"quality", "reliability", "quality+reliability"}
+    assert len(manifest) == len({
+        (t, u) for t, u, _ in config.QUALITY_AGENT_TAGS + config.RELIABILITY_AGENT_TAGS
+    })
 
     # available_at всегда не раньше timestamp: задержка публикации ЛИМС
     # не может сделать значение известным раньше момента отбора пробы.

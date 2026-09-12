@@ -1,4 +1,9 @@
-"""Выгрузка исторических данных для Агента качества и Агента надёжности.
+"""Выгрузка ГОТОВЫХ данных для Агента качества и Агента надёжности.
+
+Коллеги работают с уже подготовленными файлами — заглушки вычищены, простои
+и мусор первых суток после пуска уже учтены в колонке usable_*, отдельно
+чистить у себя не нужно. Позже это переедет в Postgres, признак usable_*
+останется тем же — просто станет колонкой таблицы, а не файлом.
 
 Это НЕ демонстрация решения целиком (для этого run_demo.py — там ещё
 оптимизация и блендинг, чужая зона ответственности). Это конкретная задача
@@ -8,18 +13,18 @@
     python export_agent_inputs.py
 
 Кладёт в cache/:
-  quality_agent_telemetry.csv         короткий горизонт (0-3ч) — режим реактора
-  quality_agent_lab_measurements.csv  сера/Т95/цетан по ЛИМС и ПАК, с меткой,
-                                       когда значение стало известно (available_at)
-  reliability_agent_telemetry.csv     длинный горизонт (недели/месяцы) — износ
-
-Дальше эти файлы читает код агентов качества/надёжности — не через этот
-скрипт, а напрямую (pandas.read_csv), как обычные готовые датасеты.
+  quality_agent_telemetry.csv         короткий горизонт (0-3ч), готов к использованию
+  reliability_agent_telemetry.csv     длинный горизонт (недели/месяцы), готов к использованию
+  quality_agent_lab_measurements.csv  сера/Т95/цетан по ЛИМС и ПАК, с available_at
+  tag_manifest.csv                    справочно: какой тег кому и что значит
+  excluded_periods.csv                справочно: что вычищено флагом usable_* и почему
 """
 
 from __future__ import annotations
 
 import sys
+
+import pandas as pd
 
 from oilcode import config
 from oilcode.agents.data import DataAgent
@@ -33,22 +38,22 @@ config.require_data_files()
 def main() -> None:
     paths = DataAgent().export_agent_datasets()
 
-    print("Готово. Файлы для агентов качества и надёжности:\n")
-    for name, path in paths.items():
-        size_kb = path.stat().st_size / 1024
-        print(f"  {name:26} {path}  ({size_kb:,.0f} КБ)")
+    print("Готовые данные для агентов (usable_* уже учтён, отдельно не чистить):")
+    for name in ("quality_telemetry", "reliability_telemetry", "quality_lab_measurements"):
+        print(f"  {name:24} {paths[name]}")
 
-    print(
-        "\nКороткий горизонт (0-3ч) — quality_agent_telemetry.csv:\n"
-        f"  теги: {', '.join(config.tag_key(t, u) for t, u, _ in config.QUALITY_AGENT_TAGS)}\n"
-        "\nДлинный горизонт (недели/месяцы) — reliability_agent_telemetry.csv:\n"
-        f"  теги: {', '.join(config.tag_key(t, u) for t, u, _ in config.RELIABILITY_AGENT_TAGS)}\n"
-        "\nВ обоих файлах есть is_running_AVT и is_running_24-2000 — "
-        "не использовать строки, где установка стоит.\n"
-        "\nВ quality_agent_lab_measurements.csv использовать available_at, "
-        "а не timestamp — иначе утечка из будущего (ЛИМС публикуется с "
-        "задержкой 4 часа)."
-    )
+    print("\nСправочно:")
+    for name in ("tag_manifest", "excluded_periods"):
+        print(f"  {name:24} {paths[name]}")
+
+    manifest = pd.read_csv(paths["tag_manifest"])
+    print(f"\nТегов агенту качества:     {(manifest['consumer'].str.contains('quality')).sum()}")
+    print(f"Тегов агенту надёжности:   {(manifest['consumer'].str.contains('reliability')).sum()}")
+
+    excluded = pd.read_csv(paths["excluded_periods"])
+    real = excluded[excluded["kind"] == "outage"]
+    print(f"Реальных простоев найдено: {len(real)} "
+         f"(от {config.MIN_OUTAGE_HOURS:.0f}ч, шум короче — не в счёт)")
 
 
 if __name__ == "__main__":
