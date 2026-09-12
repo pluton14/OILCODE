@@ -40,6 +40,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
+from tqdm import tqdm
 
 from oilcode import config
 from oilcode.contracts import DataQuality, Measurement, ProcessState
@@ -266,19 +267,23 @@ class DataAgent:
     # ==================================================================
 
     def export_agent_datasets(self, out_dir: Path | None = None) -> dict[str, Path]:
-        """Выгрузить РОВНО ДВА файла — вход Агента качества и вход Агента
+        """Выгрузить РОВНО ДВА файла (.xlsx) — вход Агента качества и вход
 
-        надёжности. Ничего третьего. Заглушки 307/251 уже пусто, периоды
-        простоя и первые сутки после пуска (мусор переходного режима) уже
-        вычищены в NaN — отдельно чистить у себя не нужно.
+        Агента надёжности. Ничего третьего. Заглушки 307/251 уже пусто,
+        периоды простоя и первые сутки после пуска (мусор переходного
+        режима) уже вычищены в NaN — отдельно чистить у себя не нужно.
 
-        Детализация источника и дат — не в третьем файле, а прямо в шапке
-        каждого из двух: несколько строк-комментариев (#), которые
-        pandas.read_csv(..., comment="#") пропускает сам.
+        Детализация источника и дат — не в третьем файле, а на листе
+        "Справка" внутри каждого из двух (см. _dataset_info_sheet).
+
+        Печатает прогресс по шагам: запись ~190 тыс. строк в .xlsx — самая
+        долгая часть (несколько минут), без прогресс-бара непонятно, работает
+        скрипт или завис.
         """
         out_dir = out_dir or config.CACHE
         out_dir.mkdir(exist_ok=True)
 
+        print("Читаю телеметрию, ЛИМС, ПАК (из cache/, если уже разобраны)...")
         telemetry = loaders.load_telemetry().set_index("timestamp").sort_index()
         telemetry = telemetry.replace(list(config.SENTINEL_VALUES), pd.NA)
         running = self._running_flags_series(telemetry)
@@ -401,11 +406,38 @@ class DataAgent:
 
         out = out.reset_index().rename(columns={"index": "timestamp"})
         info = cls._dataset_info_sheet(agent_name, tag_specs, excluded, lab_metrics)
-
-        with pd.ExcelWriter(path, engine="openpyxl") as writer:
-            out.to_excel(writer, sheet_name="Данные", index=False)
-            info.to_excel(writer, sheet_name="Справка", index=False, header=False)
+        cls._write_workbook(out, info, path, agent_name)
         return path
+
+    @staticmethod
+    def _write_workbook(out: pd.DataFrame, info: pd.DataFrame, path: Path,
+                        agent_name: str) -> None:
+        """Пишем строки сами (не pandas.to_excel) — иначе несколько минут
+
+        записи ~190 тыс. строк проходят молча, и снаружи непонятно, работает
+        скрипт или завис. С прогресс-баром видно, сколько ещё ждать.
+        """
+        from openpyxl import Workbook
+
+        # openpyxl не умеет pd.NA/NaN — pandas.to_excel это прятал сам,
+        # при ручной записи строк нужно явно заменить на None (пустая ячейка).
+        out = out.astype(object).where(pd.notnull(out), None)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Данные"
+        ws.append([str(c) for c in out.columns])
+
+        rows = out.itertuples(index=False, name=None)
+        for row in tqdm(rows, total=len(out), desc=f"{agent_name}: запись строк",
+                        unit="стр", unit_scale=True):
+            ws.append(row)
+
+        ws2 = wb.create_sheet("Справка")
+        for row in info.itertuples(index=False, name=None):
+            ws2.append(row)
+
+        wb.save(path)
 
     @staticmethod
     def _dataset_info_sheet(agent_name: str, tag_specs: list[tuple[str, str, str]],
