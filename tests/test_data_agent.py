@@ -82,17 +82,48 @@ def test_data_quality_is_ok_on_a_calm_moment():
     assert all(state.data_quality.unit_running.values())
 
 
-def test_export_agent_datasets_has_no_sentinels_and_flags_outages(tmp_path):
+def test_export_agent_datasets_is_exactly_two_files(tmp_path):
+    """Ровно два файла — вход агента качества и вход агента надёжности,
+
+    не более. Это явное требование: коллеги работают с готовыми данными,
+    а не собирают их из нескольких сопроводительных файлов.
+    """
+    paths = DataAgent().export_agent_datasets(out_dir=tmp_path)
+    assert set(paths.keys()) == {"quality", "reliability"}
+    assert set(p.name for p in tmp_path.iterdir()) == {
+        "quality_agent_data.csv", "reliability_agent_data.csv",
+    }
+
+
+def test_export_header_documents_source_and_excluded_dates(tmp_path):
+    """Источник и исключённые даты — в шапке самого файла (#...), а не в
+
+    отдельном справочнике, который можно забыть открыть.
+    """
+    paths = DataAgent().export_agent_datasets(out_dir=tmp_path)
+    header = paths["quality"].read_text(encoding="utf-8-sig").splitlines()
+    header = [ln for ln in header if ln.startswith("#")]
+
+    assert any("HT_T5" in ln and "24-2000" in ln for ln in header), (
+        "источник тега (какая установка) должен быть виден в шапке"
+    )
+    assert any("Периоды уже занулены" in ln for ln in header)
+    assert any("24-2000:" in ln for ln in header), (
+        "в quality-файле есть теги гидроочистки — её простои обязаны быть в шапке"
+    )
+
+
+def test_export_agent_datasets_has_no_sentinels_and_masks_outages(tmp_path):
     """То, что реально получают агенты качества/надёжности от экспорта.
 
     Не одна точка (build_state), а вся история — файлы, которые эти агенты
-    читают у себя в коде для обучения моделей.
+    читают у себя в коде для обучения моделей. pandas.read_csv сам пропускает
+    строки шапки благодаря comment="#".
     """
     paths = DataAgent().export_agent_datasets(out_dir=tmp_path)
 
-    quality = pd.read_csv(paths["quality_telemetry"])
-    reliability = pd.read_csv(paths["reliability_telemetry"])
-    lab = pd.read_csv(paths["quality_lab_measurements"])
+    quality = pd.read_csv(paths["quality"], comment="#", index_col=0, parse_dates=True)
+    reliability = pd.read_csv(paths["reliability"], comment="#", index_col=0, parse_dates=True)
 
     for df in (quality, reliability):
         numeric = df.select_dtypes("number")
@@ -101,32 +132,18 @@ def test_export_agent_datasets_has_no_sentinels_and_flags_outages(tmp_path):
                 f"заглушка {sentinel} просочилась в экспорт — "
                 "агент качества/надёжности примет её за измерение"
             )
-        assert "usable_AVT" in df.columns
-        assert "usable_24-2000" in df.columns
 
-    assert (reliability["usable_AVT"] == False).any(), (
-        "в истории есть известная остановка АВТ — экспорт обязан её сохранить"
+    # Известная остановка АВТ (март-апрель 2024) должна быть занулена
+    # во всех тегах АВТ, а не просто помечена отдельным флагом.
+    during_outage = quality.loc["2024-04-01", "T33"]
+    assert during_outage.isna().all(), (
+        "теги АВТ на известной остановке должны быть NaN, а не значение простоя"
     )
 
-    excluded = pd.read_csv(paths["excluded_periods"])
-    assert set(excluded["kind"]) == {"outage", "startup"}
-    assert (excluded["duration_h"] >= 0).all()
-    # После фильтра шума короче MIN_OUTAGE_HOURS быть не должно — иначе
-    # десятки шумовых провалов на 10-30 минут завалят настоящие остановки.
-    real_outages = excluded[excluded["kind"] == "outage"]
-    assert (real_outages["duration_h"] >= config.MIN_OUTAGE_HOURS).all()
-
-    manifest = pd.read_csv(paths["tag_manifest"])
-    assert set(manifest["consumer"]) <= {"quality", "reliability", "quality+reliability"}
-    assert len(manifest) == len({
-        (t, u) for t, u, _ in config.QUALITY_AGENT_TAGS + config.RELIABILITY_AGENT_TAGS
-    })
-
-    # available_at всегда не раньше timestamp: задержка публикации ЛИМС
-    # не может сделать значение известным раньше момента отбора пробы.
-    lab["timestamp"] = pd.to_datetime(lab["timestamp"])
-    lab["available_at"] = pd.to_datetime(lab["available_at"])
-    assert (lab["available_at"] >= lab["timestamp"]).all()
+    # Целевой показатель качества — сера, слитая из ЛИМС/ПАК прямо в тот же файл.
+    assert "sulfur_mg_kg" in quality.columns
+    assert "sulfur_mg_kg_source" in quality.columns
+    assert quality["sulfur_mg_kg_source"].dropna().isin(["LIMS", "PAK"]).all()
 
 
 def test_cetane_number_freshness_uses_its_own_sampling_interval():
