@@ -16,16 +16,17 @@ from datetime import datetime
 
 from oilcode import config
 from oilcode.agents.blending import BlendingAgent
+from oilcode.agents.data import DataAgent
 from oilcode.agents.optimization import OptimizationAgent
 from oilcode.agents.quality import QualityAgent
 from oilcode.agents.reliability import ReliabilityAgent
 from oilcode.contracts import ProcessState, Recommendation
-from oilcode.data.state import build_process_state
 from oilcode.data import loaders
 
 
 class Orchestrator:
     def __init__(self):
+        self.data_agent = DataAgent()
         self.quality_agent = QualityAgent()
         self.reliability_agent = ReliabilityAgent()
         self.blending_agent = BlendingAgent()
@@ -44,7 +45,7 @@ class Orchestrator:
         if not self._fitted:
             self.fit()
 
-        state = build_process_state(timestamp)
+        state = self.data_agent.build_state(timestamp)
         return self.decide_for_state(state)
 
     def decide_for_state(self, state: ProcessState) -> Recommendation:

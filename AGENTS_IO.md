@@ -92,21 +92,17 @@
 | Признак остановки ГО | `HT:F26` < 5 % медианы | найдено |
 | Порог залипания | без изменений > 6 ч | допущение |
 
-### OUT — `ProcessState`
+### OUT — `ProcessState` (по факту реализации в oilcode/agents/data.py)
 
 | Поле | Тип | Смысл |
 |---|---|---|
 | `timestamp` | datetime | момент решения |
-| `kip` | dict[str, float] | значения тегов, ключи с префиксом `HT_` |
-| `quality` | dict[str, Measurement] | показатели качества |
-| `quality[x].value` | float | значение |
-| `quality[x].source` | LIMS / PAK / VAK | откуда |
-| `quality[x].measured_at` | datetime | момент **отбора** |
-| `quality[x].age_hours` | float | возраст от отбора |
-| `data_quality.unit_running` | bool | установка работает |
-| `data_quality.missing_tags` | list | нет значения |
-| `data_quality.stale` | list | устаревшие анализы |
-| `data_quality.sentinels` | list | попались заглушки |
+| `kip` | dict[str, float] | ТОЛЬКО декларированные теги (см. config.QUALITY_AGENT_TAGS / RELIABILITY_AGENT_TAGS), не вся телеметрия |
+| `quality` | dict[str, Measurement] | показатели качества, ЛИМС→ПАК с учётом задержки публикации и покрытия |
+| `data_quality.unit_running` | dict[str, bool] | {"AVT": True, "24-2000": False} — работает ли каждая установка |
+| `data_quality.sentinels_found` | list[str] | теги, показавшие заглушку 307/251 вместо измерения |
+| `data_quality.missing_tags` | list[str] | нет значения вовсе |
+| `data_quality.stale_measurements` | list[str] | устарело, порог свой у каждого показателя ЛИМС |
 | `data_quality.overall` | ok / degraded / insufficient | **вердикт** |
 | `data_quality.notes` | list[str] | причины для объяснения |
 

@@ -41,8 +41,20 @@ class Measurement:
 
 @dataclass
 class DataQuality:
+    """Вердикт Агента данных. Это то, на что смотрят все остальные агенты,
+
+    прежде чем доверять ProcessState.kip и ProcessState.quality.
+    """
+
     missing_tags: list[str] = field(default_factory=list)
     stale_measurements: list[str] = field(default_factory=list)
+    # Работает ли каждая установка на этот момент. {"AVT": True, "24-2000": False}
+    # Если установка стоит — её теги физически не значат то же самое (расход
+    # в нуле, температура падает к уличной), это не аномалия режима.
+    unit_running: dict[str, bool] = field(default_factory=dict)
+    # Теги, которые в этот момент показывают служебную заглушку (307/251),
+    # а не измерение. Такой тег не попал в kip — вместо него запись здесь.
+    sentinels_found: list[str] = field(default_factory=list)
     overall: Confidence = "ok"
     notes: list[str] = field(default_factory=list)
 
