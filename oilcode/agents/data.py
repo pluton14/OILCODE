@@ -286,12 +286,12 @@ class DataAgent:
 
         quality_path = self._export_dataset(
             telemetry, running, excluded, config.QUALITY_AGENT_TAGS,
-            out_dir / "quality_agent_data.csv", agent_name="Агент качества",
+            out_dir / "quality_agent_data.xlsx", agent_name="Агент качества",
             lab_metrics={"sulfur_mg_kg": "Mg.Sulfur", "t95_c": "95%.T"})
 
         reliability_path = self._export_dataset(
             telemetry, running, excluded, config.RELIABILITY_AGENT_TAGS,
-            out_dir / "reliability_agent_data.csv", agent_name="Агент надёжности",
+            out_dir / "reliability_agent_data.xlsx", agent_name="Агент надёжности",
             lab_metrics=None)
 
         return {"quality": quality_path, "reliability": reliability_path}
@@ -366,11 +366,13 @@ class DataAgent:
                         excluded: list[dict], tag_specs: list[tuple[str, str, str]],
                         path: Path, agent_name: str,
                         lab_metrics: dict[str, str] | None) -> Path:
-        """Один файл — один агент. Теги + (для качества) слитые лабораторные
+        """Один файл — один агент, .xlsx с двумя листами.
 
-        показатели, с занулёнными периодами простоя/пуска и шапкой-описанием
-        источника и дат прямо в CSV (строки '#', pandas.read_csv их
-        игнорирует сам).
+        CSV с текстовой шапкой (#-строки) в Excel открывался криво — Excel
+        не понимает конвенцию комментариев и сдвигает колонки. Поэтому:
+        лист "Данные" — чистая таблица без единой лишней строки сверху,
+        лист "Справка" — источник каждого тега и исключённые даты, отдельно,
+        не мешая данным. Один файл на агента, как и было договорено.
         """
         keys = [config.tag_key(t, u) for t, u, _ in tag_specs]
         keys = [k for k in keys if k in telemetry.columns]
@@ -397,33 +399,41 @@ class DataAgent:
                 out[out_col] = value
                 out[f"{out_col}_source"] = source
 
-        header = cls._dataset_header(agent_name, tag_specs, excluded, lab_metrics)
-        with open(path, "w", encoding="utf-8-sig", newline="") as f:
-            f.write(header)
-            out.to_csv(f)
+        out = out.reset_index().rename(columns={"index": "timestamp"})
+        info = cls._dataset_info_sheet(agent_name, tag_specs, excluded, lab_metrics)
+
+        with pd.ExcelWriter(path, engine="openpyxl") as writer:
+            out.to_excel(writer, sheet_name="Данные", index=False)
+            info.to_excel(writer, sheet_name="Справка", index=False, header=False)
         return path
 
     @staticmethod
-    def _dataset_header(agent_name: str, tag_specs: list[tuple[str, str, str]],
-                        excluded: list[dict], lab_metrics: dict[str, str] | None) -> str:
-        lines = [f"# {agent_name} — вход. Источник и что значит каждая колонка:"]
+    def _dataset_info_sheet(agent_name: str, tag_specs: list[tuple[str, str, str]],
+                            excluded: list[dict],
+                            lab_metrics: dict[str, str] | None) -> pd.DataFrame:
+        """Лист «Справка»: источник каждой колонки, потом исключённые даты."""
+        rows = [[f"{agent_name} — вход", "", ""],
+                ["Колонка", "Источник", "Что значит"]]
         for tag, unit, desc in tag_specs:
             src = "телеметрия АВТ" if unit == "AVT" else "телеметрия 24-2000"
-            lines.append(f"# {config.tag_key(tag, unit):8} {src:18} {desc}")
+            rows.append([config.tag_key(tag, unit), src, desc])
         if lab_metrics:
-            lines.append(f"# {'sulfur_mg_kg':8} {'ЛИМС/ПАК':18} сера, целевой показатель, приоритет — самый свежий источник")
-            lines.append(f"# {'t95_c':8} {'ЛИМС':18} температура 95% выкипания товарного продукта")
-            lines.append("# *_source показывает, откуда взято конкретное значение: LIMS или PAK")
-        lines.append("#")
-        lines.append("# Периоды уже занулены (простой установки + "
-                     f"{config.STARTUP_BUFFER_HOURS:.0f}ч после пуска), отдельно чистить не нужно:")
+            rows.append(["sulfur_mg_kg", "ЛИМС/ПАК",
+                        "сера, целевой показатель, приоритет — самый свежий источник"])
+            rows.append(["t95_c", "ЛИМС", "температура 95% выкипания товарного продукта"])
+            rows.append(["*_source", "", "откуда взято конкретное значение: LIMS или PAK"])
+
+        rows.append(["", "", ""])
+        rows.append([f"Уже занулено в данных (простой + "
+                     f"{config.STARTUP_BUFFER_HOURS:.0f}ч после пуска)", "", ""])
         for unit in config.UNIT_FLOW_TAGS:
             outages = [e for e in excluded if e["unit"] == unit and e["kind"] == "outage"]
             if not outages:
                 continue
             span = ", ".join(f"{e['start']:%Y-%m-%d}..{e['end']:%Y-%m-%d}" for e in outages)
-            lines.append(f"#   {unit}: {span}")
-        return "\n".join(lines) + "\n"
+            rows.append([unit, span, ""])
+
+        return pd.DataFrame(rows)
 
     @staticmethod
     def _merged_lab_metric(metric: str, index: pd.DatetimeIndex) -> tuple[pd.Series, pd.Series]:
