@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1574" viewBox="0 0 1000 1574">
+<rect width="1000" height="1574" fill="#F5F7F4"/>
+<text x="500.0" y="38" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#16211F" text-anchor="middle">Граф агентов: вход и выход каждого узла</text>
+<text x="500.0" y="62" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#647169" text-anchor="middle">ВЕТО — право запретить действие независимо от выгоды. Теги указаны с префиксом установки.</text>
+<rect x="40.0" y="84" width="221.0" height="42" rx="8" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="150.5" y="102" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10.5" fill="#16211F" text-anchor="middle">avt_tags.csv</text>
+<text x="150.5" y="116" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="10" fill="#647169" text-anchor="middle">71 тег</text>
+<rect x="273.0" y="84" width="221.0" height="42" rx="8" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="383.5" y="102" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10.5" fill="#16211F" text-anchor="middle">242000_tags.csv</text>
+<text x="383.5" y="116" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="10" fill="#647169" text-anchor="middle">26 тегов</text>
+<rect x="506.0" y="84" width="221.0" height="42" rx="8" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="616.5" y="102" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10.5" fill="#16211F" text-anchor="middle">ЛИМС</text>
+<text x="616.5" y="116" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="10" fill="#647169" text-anchor="middle">6 точек отбора</text>
+<rect x="739.0" y="84" width="221.0" height="42" rx="8" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="849.5" y="102" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10.5" fill="#16211F" text-anchor="middle">ПАК</text>
+<text x="849.5" y="116" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="10" fill="#647169" text-anchor="middle">сера, плотность</text>
+<line x1="500.0" y1="126" x2="500.0" y2="142" stroke="#BFC8BF" stroke-width="2"/>
+<path d="M495.0 142 L505.0 142 L500.0 150 Z" fill="#BFC8BF"/>
+<rect x="40" y="150" width="920" height="199" rx="10" fill="#FFFFFF" stroke="#D9DFD9" stroke-width="1"/>
+<rect x="40" y="150" width="920" height="3" rx="1.5" fill="#4C7A87"/>
+<text x="54" y="171" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="13.5" font-weight="700" fill="#4C7A87">АГЕНТ ДАННЫХ</text>
+<rect x="164.39999999999998" y="160" width="44" height="15" rx="4" fill="#F7E3E0"/>
+<text x="186.39999999999998" y="170.5" font-family="'IBM Plex Mono','Consolas',monospace" font-size="9" font-weight="600" fill="#9E2B25" text-anchor="middle">ВЕТО</text>
+<rect x="41" y="180" width="918" height="76" fill="#EEF1EE"/>
+<line x1="40" y1="180" x2="960" y2="180" stroke="#D9DFD9"/>
+<text x="54" y="192" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВХОД</text>
+<text x="54" y="207" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">avt_tags.csv · 242000_tags.csv · ЛИМС 6 точек · ПАК 2 сигнала</text>
+<text x="54" y="224" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">чистит заглушки 307 и 251, ловит остановки и залипания</text>
+<text x="54" y="241" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">считает возраст проб с учётом задержки публикации ЛИМС 4 ч</text>
+<line x1="40" y1="256" x2="960" y2="256" stroke="#D9DFD9"/>
+<text x="54" y="268" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВЫХОД</text>
+<text x="54" y="283" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">kip             значения тегов          HT_T5: 370.3 ...</text>
+<text x="54" y="300" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">quality         значение + источник + возраст   9.8, ПАК, 0.2ч</text>
+<text x="54" y="317" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">overall         вердикт                 ok / degraded / insufficient</text>
+<text x="54" y="334" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">notes           причины                 ЛИМС устарел на 26ч</text>
+<line x1="500.0" y1="349" x2="500.0" y2="375" stroke="#BFC8BF" stroke-width="2"/>
+<path d="M495.0 375 L505.0 375 L500.0 383 Z" fill="#BFC8BF"/>
+<rect x="455.0" y="355" width="90.0" height="16" rx="5" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="500.0" y="366.5" font-family="'IBM Plex Mono','Consolas',monospace" font-size="9.5" fill="#647169" text-anchor="middle">ProcessState</text>
+<rect x="40" y="383" width="450.0" height="199" rx="10" fill="#FFFFFF" stroke="#D9DFD9" stroke-width="1"/>
+<rect x="40" y="383" width="450.0" height="3" rx="1.5" fill="#0F6E64"/>
+<text x="54" y="404" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="13.5" font-weight="700" fill="#0F6E64">АГЕНТ КАЧЕСТВА</text>
+<rect x="41" y="413" width="448.0" height="76" fill="#EEF1EE"/>
+<line x1="40" y1="413" x2="490.0" y2="413" stroke="#D9DFD9"/>
+<text x="54" y="425" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВХОД</text>
+<text x="54" y="440" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">HT:T5 T6 T11 F15 P13 F26</text>
+<text x="54" y="457" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">AVT:T66 F28 F30 F32 T33 T20</text>
+<text x="54" y="474" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">ЛИМС сера и Т95 · ПАК сера</text>
+<line x1="40" y1="489" x2="490.0" y2="489" stroke="#D9DFD9"/>
+<text x="54" y="501" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВЫХОД</text>
+<text x="54" y="516" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">sulfur_now      9.8 мг/кг</text>
+<text x="54" y="533" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">sulfur_3h      10.2 мг/кг</text>
+<text x="54" y="550" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">t95_now         349 °C</text>
+<text x="54" y="567" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">confidence      0.72</text>
+<rect x="510.0" y="383" width="450.0" height="199" rx="10" fill="#FFFFFF" stroke="#D9DFD9" stroke-width="1"/>
+<rect x="510.0" y="383" width="450.0" height="3" rx="1.5" fill="#A24A2E"/>
+<text x="524.0" y="404" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="13.5" font-weight="700" fill="#A24A2E">АГЕНТ НАДЁЖНОСТИ</text>
+<rect x="667.2" y="393" width="44" height="15" rx="4" fill="#F7E3E0"/>
+<text x="689.2" y="403.5" font-family="'IBM Plex Mono','Consolas',monospace" font-size="9" font-weight="600" fill="#9E2B25" text-anchor="middle">ВЕТО</text>
+<rect x="511.0" y="413" width="448.0" height="76" fill="#EEF1EE"/>
+<line x1="510.0" y1="413" x2="960.0" y2="413" stroke="#D9DFD9"/>
+<text x="524.0" y="425" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВХОД</text>
+<text x="524.0" y="440" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">HT:W10 — перепад давления</text>
+<text x="524.0" y="457" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">HT:T5 T6 T11 — температуры слоя</text>
+<text x="524.0" y="474" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">HT:F2 P24 — водород</text>
+<line x1="510.0" y1="489" x2="960.0" y2="489" stroke="#D9DFD9"/>
+<text x="524.0" y="501" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВЫХОД</text>
+<text x="524.0" y="516" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">temp_30d        369 °C</text>
+<text x="524.0" y="533" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">headroom        33 °C до предела</text>
+<text x="524.0" y="550" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">max_temp        378 °C — рамка</text>
+<text x="524.0" y="567" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">regime_allowed  true / false</text>
+<line x1="500.0" y1="582" x2="500.0" y2="608" stroke="#BFC8BF" stroke-width="2"/>
+<path d="M495.0 608 L505.0 608 L500.0 616 Z" fill="#BFC8BF"/>
+<rect x="371.0" y="588" width="258.0" height="16" rx="5" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="500.0" y="599.5" font-family="'IBM Plex Mono','Consolas',monospace" font-size="9.5" fill="#647169" text-anchor="middle">прогноз качества · предел по температуре</text>
+<rect x="40" y="616" width="920" height="199" rx="10" fill="#FFFFFF" stroke="#D9DFD9" stroke-width="1"/>
+<rect x="40" y="616" width="920" height="3" rx="1.5" fill="#6B4C87"/>
+<text x="54" y="637" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="13.5" font-weight="700" fill="#6B4C87">АГЕНТ БЛЕНДИНГА</text>
+<rect x="189.0" y="626" width="44" height="15" rx="4" fill="#F7E3E0"/>
+<text x="211.0" y="636.5" font-family="'IBM Plex Mono','Consolas',monospace" font-size="9" font-weight="600" fill="#9E2B25" text-anchor="middle">ВЕТО</text>
+<rect x="41" y="646" width="918" height="76" fill="#EEF1EE"/>
+<line x1="40" y1="646" x2="960" y2="646" stroke="#D9DFD9"/>
+<text x="54" y="658" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВХОД</text>
+<text x="54" y="673" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">профили резервуаров — фактические квантили качества за 3 года</text>
+<text x="54" y="690" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">спецификация — ВХОДНОЙ ПАРАМЕТР: сера, Т95, цетановое число</text>
+<text x="54" y="707" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">прогноз качества от агента качества</text>
+<line x1="40" y1="722" x2="960" y2="722" stroke="#D9DFD9"/>
+<text x="54" y="734" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВЫХОД</text>
+<text x="54" y="749" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">shippable_range до 15.8 мг/кг — в каком качестве отгружаем</text>
+<text x="54" y="766" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">recipe          current 50% · deep 40% · normal 10%</text>
+<text x="54" y="783" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">improver_pct    0 %   при пределе 3 %</text>
+<text x="54" y="800" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">cost            1.024 усл.ед./т</text>
+<line x1="500.0" y1="815" x2="500.0" y2="841" stroke="#BFC8BF" stroke-width="2"/>
+<path d="M495.0 841 L505.0 841 L500.0 849 Z" fill="#BFC8BF"/>
+<rect x="389.0" y="821" width="222.0" height="16" rx="5" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="500.0" y="832.5" font-family="'IBM Plex Mono','Consolas',monospace" font-size="9.5" fill="#647169" text-anchor="middle">рамка отгружаемого качества + цена</text>
+<rect x="40" y="849" width="920" height="216" rx="10" fill="#FFFFFF" stroke="#D9DFD9" stroke-width="1"/>
+<rect x="40" y="849" width="920" height="3" rx="1.5" fill="#3A5590"/>
+<text x="54" y="870" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="13.5" font-weight="700" fill="#3A5590">АГЕНТ ОПТИМИЗАЦИИ</text>
+<rect x="41" y="879" width="918" height="93" fill="#EEF1EE"/>
+<line x1="40" y1="879" x2="960" y2="879" stroke="#D9DFD9"/>
+<text x="54" y="891" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВХОД</text>
+<text x="54" y="906" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">рычаги: HT:T5 F26 F15 P13 F2 · AVT:T33 T20</text>
+<text x="54" y="923" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">от качества — во что превратится сера</text>
+<text x="54" y="940" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">от надёжности — предел по температуре</text>
+<text x="54" y="957" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">от блендинга — рамка качества и цена</text>
+<line x1="40" y1="972" x2="960" y2="972" stroke="#D9DFD9"/>
+<text x="54" y="984" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВЫХОД</text>
+<text x="54" y="999" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">scenarios       шаги ±1 % и ±2 %, включая ничего не менять</text>
+<text x="54" y="1016" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">changes         T5: 370.3 -&gt; 377.7</text>
+<text x="54" y="1033" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">rejected_by     T5 выше предела 378</text>
+<text x="54" y="1050" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">best_id         T5+2%     feasible: true</text>
+<line x1="500.0" y1="1065" x2="500.0" y2="1091" stroke="#BFC8BF" stroke-width="2"/>
+<path d="M495.0 1091 L505.0 1091 L500.0 1099 Z" fill="#BFC8BF"/>
+<rect x="431.0" y="1071" width="138.0" height="16" rx="5" fill="#EEF1EE" stroke="#D9DFD9"/>
+<text x="500.0" y="1082.5" font-family="'IBM Plex Mono','Consolas',monospace" font-size="9.5" fill="#647169" text-anchor="middle">сценарии с метриками</text>
+<rect x="40" y="1099" width="920" height="275" rx="10" fill="#FFFFFF" stroke="#D9DFD9" stroke-width="1"/>
+<rect x="40" y="1099" width="920" height="3" rx="1.5" fill="#B8791A"/>
+<text x="54" y="1120" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="13.5" font-weight="700" fill="#B8791A">ОРКЕСТРАТОР</text>
+<rect x="41" y="1129" width="918" height="59" fill="#EEF1EE"/>
+<line x1="40" y1="1129" x2="960" y2="1129" stroke="#D9DFD9"/>
+<text x="54" y="1141" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВХОД</text>
+<text x="54" y="1156" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">вердикт данных · прогноз качества · ограничения надёжности</text>
+<text x="54" y="1173" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11.5" fill="#3E4A47">сценарии оптимизации · рецептура и цена блендинга</text>
+<line x1="40" y1="1188" x2="960" y2="1188" stroke="#D9DFD9"/>
+<text x="54" y="1200" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ПРАВИЛО РАЗРЕШЕНИЯ КОНФЛИКТА</text>
+<text x="54" y="1215" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">1 · данные непригодны       -&gt; отказ</text>
+<text x="54" y="1232" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">2 · надёжность против      -&gt; отказ</text>
+<text x="54" y="1249" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">3 · блендинг не сводит     -&gt; отказ</text>
+<text x="54" y="1266" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">4 · проблемы нет           -&gt; вмешательство не требуется</text>
+<text x="54" y="1283" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">5 · иначе                  -&gt; самый дешёвый из допустимых</text>
+<line x1="40" y1="1298" x2="960" y2="1298" stroke="#D9DFD9"/>
+<text x="54" y="1310" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ВЫХОД</text>
+<text x="54" y="1325" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">status          recommendation / no_action / refusal</text>
+<text x="54" y="1342" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">семь блоков оператору — см. ниже</text>
+<text x="54" y="1359" font-family="'IBM Plex Mono','Consolas',monospace" font-size="11" fill="#3E4A47">agent_verdicts  все вердикты целиком, для дашборда</text>
+<line x1="500.0" y1="1374" x2="500.0" y2="1390" stroke="#BFC8BF" stroke-width="2"/>
+<path d="M495.0 1390 L505.0 1390 L500.0 1398 Z" fill="#BFC8BF"/>
+<rect x="40" y="1398" width="920" height="152" rx="10" fill="#EEF1EE" stroke="#B8791A" stroke-width="1.5"/>
+<text x="54" y="1413" font-family="'IBM Plex Mono','Consolas',monospace" font-size="8.5" letter-spacing="1" fill="#647169">ТИПОВОЙ ВЫХОД ОПЕРАТОРУ — ПРИМЕР</text>
+<text x="54" y="1427" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10" fill="#B8791A">1</text>
+<text x="70" y="1427" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" fill="#16211F">Время и состояние</text>
+<text x="219" y="1427" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" fill="#3E4A47">15.06.2024 12:00 · сера 9.8 мг/кг (ПАК) · ЛИМС 26 ч</text>
+<text x="54" y="1444" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10" fill="#B8791A">2</text>
+<text x="70" y="1444" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" fill="#16211F">Проблема</text>
+<text x="219" y="1444" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" fill="#3E4A47">запас до предела отгрузки 0.4 мг/кг</text>
+<text x="54" y="1461" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10" fill="#B8791A">3</text>
+<text x="70" y="1461" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" fill="#16211F">Действие</text>
+<text x="219" y="1461" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" fill="#3E4A47">HT:T5   370.3 -&gt; 377.7 °C   (+2 %)</text>
+<text x="54" y="1478" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10" fill="#B8791A">4</text>
+<text x="70" y="1478" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" fill="#16211F">Эффект</text>
+<text x="219" y="1478" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" fill="#3E4A47">сера 8.2 · смесь 9.6 · цена 1.024 · катализатор -1 °C</text>
+<text x="54" y="1495" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10" fill="#B8791A">5</text>
+<text x="70" y="1495" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" fill="#16211F">Ограничения</text>
+<text x="219" y="1495" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" fill="#3E4A47">сера · Т95 · цетан · доли 100 % · предел 378 — все пройдены</text>
+<text x="54" y="1512" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10" fill="#B8791A">6</text>
+<text x="70" y="1512" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" fill="#16211F">Уверенность</text>
+<text x="219" y="1512" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" fill="#3E4A47">средняя — лабораторный анализ устарел</text>
+<text x="54" y="1529" font-family="'IBM Plex Mono','Consolas',monospace" font-size="10" fill="#B8791A">7</text>
+<text x="70" y="1529" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" font-weight="600" fill="#16211F">Объяснение</text>
+<text x="219" y="1529" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="11" fill="#3E4A47">из 35 вариантов 28 отброшено, выбран самый дешёвый</text>
+</svg>
