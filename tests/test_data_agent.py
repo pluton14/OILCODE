@@ -82,6 +82,39 @@ def test_data_quality_is_ok_on_a_calm_moment():
     assert all(state.data_quality.unit_running.values())
 
 
+def test_export_agent_datasets_has_no_sentinels_and_flags_outages(tmp_path):
+    """То, что реально получают агенты качества/надёжности от экспорта.
+
+    Не одна точка (build_state), а вся история — файлы, которые эти агенты
+    читают у себя в коде для обучения моделей.
+    """
+    paths = DataAgent().export_agent_datasets(out_dir=tmp_path)
+
+    quality = pd.read_csv(paths["quality_telemetry"])
+    reliability = pd.read_csv(paths["reliability_telemetry"])
+    lab = pd.read_csv(paths["quality_lab_measurements"])
+
+    for df in (quality, reliability):
+        numeric = df.select_dtypes("number")
+        for sentinel in config.SENTINEL_VALUES:
+            assert not (numeric == sentinel).any().any(), (
+                f"заглушка {sentinel} просочилась в экспорт — "
+                "агент качества/надёжности примет её за измерение"
+            )
+        assert "is_running_AVT" in df.columns
+        assert "is_running_24-2000" in df.columns
+
+    assert (reliability["is_running_AVT"] == False).any(), (
+        "в истории есть известная остановка АВТ — экспорт обязан её сохранить"
+    )
+
+    # available_at всегда не раньше timestamp: задержка публикации ЛИМС
+    # не может сделать значение известным раньше момента отбора пробы.
+    lab["timestamp"] = pd.to_datetime(lab["timestamp"])
+    lab["available_at"] = pd.to_datetime(lab["available_at"])
+    assert (lab["available_at"] >= lab["timestamp"]).all()
+
+
 def test_cetane_number_freshness_uses_its_own_sampling_interval():
     """CetaneNumber меряют раз в ~29 суток — общий 48-часовой порог здесь неверен.
 

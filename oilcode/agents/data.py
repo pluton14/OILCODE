@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from functools import lru_cache
+from pathlib import Path
 
 import pandas as pd
 
@@ -80,7 +81,22 @@ def _flow_medians() -> dict[str, float]:
 
 
 class DataAgent:
-    """Собирает ProcessState на момент времени и выносит вердикт пригодности."""
+    """Собирает ProcessState на момент времени и выносит вердикт пригодности.
+
+    Два разных режима работы — не путать:
+
+    build_state(ts)           — ОДИН снимок на момент времени. Для рантайма
+                                 (оркестратор дёргает это на каждое решение).
+    export_agent_datasets()   — ВСЯ история по декларированным тегам, одним
+                                 файлом на потребителя. Для обучения и
+                                 проверки моделей — этим пользуются Агент
+                                 качества и Агент надёжности у себя в коде,
+                                 а не build_state().
+
+    Решение с синка 13.09: качество живёт на коротком горизонте (0-3ч),
+    надёжность — на длинном (недели/месяцы дрейфа катализатора). Поэтому
+    экспорт разделён на два файла, а не один общий.
+    """
 
     def build_state(self, timestamp: str | datetime) -> ProcessState:
         ts = pd.Timestamp(timestamp)
@@ -243,3 +259,115 @@ class DataAgent:
                 dq.stale_measurements.append(f"PAK:{pak_tag} ({age_h:.1f}ч)")
 
         return quality
+
+    # ==================================================================
+    # ВЫГРУЗКА ПОЛНОЙ ИСТОРИИ — то, чем пользуются агенты качества
+    # и надёжности напрямую, у себя в коде, для обучения моделей.
+    # ==================================================================
+
+    def export_agent_datasets(self, out_dir: Path | None = None) -> dict[str, Path]:
+        """Выгрузить три файла: короткий горизонт, длинный горизонт, лаборатория.
+
+        Возвращает {имя: путь}. Каждый файл — временной ряд с меткой времени
+        в индексе, заглушки 307/251 уже заменены на пусто, добавлен флаг
+        "установка работает" на каждый момент.
+        """
+        out_dir = out_dir or config.CACHE
+        out_dir.mkdir(exist_ok=True)
+
+        telemetry = loaders.load_telemetry().set_index("timestamp")
+        telemetry = telemetry.replace(list(config.SENTINEL_VALUES), pd.NA)
+        running = self._running_flags_series(telemetry)
+
+        paths = {
+            "quality_telemetry": self._export_tag_slice(
+                telemetry, running, config.QUALITY_AGENT_TAGS,
+                out_dir / "quality_agent_telemetry.csv"),
+            "reliability_telemetry": self._export_tag_slice(
+                telemetry, running, config.RELIABILITY_AGENT_TAGS,
+                out_dir / "reliability_agent_telemetry.csv"),
+            "quality_lab_measurements": self._export_lab_measurements(
+                out_dir / "quality_agent_lab_measurements.csv"),
+        }
+        return paths
+
+    @staticmethod
+    def _running_flags_series(telemetry: pd.DataFrame) -> pd.DataFrame:
+        """То же правило остановки, что в _check_units_running, но на весь ряд
+
+        разом, а не на одну строку — быстрее и даёт готовый флаг на экспорт.
+        """
+        medians = _flow_medians()
+        flags = pd.DataFrame(index=telemetry.index)
+        for unit, tags in config.UNIT_FLOW_TAGS.items():
+            keys = [config.tag_key(t, unit) for t in tags if config.tag_key(t, unit) in telemetry.columns]
+            if not keys:
+                continue
+            total = telemetry[keys].abs().sum(axis=1, skipna=True)
+            median_total = sum(abs(medians.get(k, 0.0)) for k in keys)
+            threshold = config.OUTAGE_FLOW_FRACTION * median_total
+            flags[f"is_running_{unit}"] = (total >= threshold) if median_total > 0 else True
+        return flags
+
+    @staticmethod
+    def _export_tag_slice(telemetry: pd.DataFrame, running: pd.DataFrame,
+                          tag_specs: list[tuple[str, str, str]], path: Path) -> Path:
+        """Срез телеметрии ровно по декларированным тегам + флаги простоя.
+
+        Заголовок колонки = tag_key (например HT_T5) — расшифровка физического
+        смысла каждого тега лежит в config.py рядом с tag_specs, здесь её
+        сознательно нет, чтобы файл был чистым числовым рядом для обучения.
+        """
+        keys = [config.tag_key(t, u) for t, u, _ in tag_specs]
+        keys = [k for k in keys if k in telemetry.columns]
+        out = telemetry[keys].join(running)
+        out.to_csv(path, encoding="utf-8-sig")
+        return path
+
+    @staticmethod
+    def _export_lab_measurements(path: Path) -> Path:
+        """Лабораторные и поточные показатели качества — длинный формат:
+
+        timestamp | available_at | metric | value | source
+
+        available_at учитывает 4-часовую задержку публикации ЛИМС: до этого
+        момента значение не могло быть известно оператору. При обучении
+        моделей использовать available_at, а не timestamp, — иначе утечка
+        из будущего (то, за что ТЗ штрафует явно).
+        """
+        lims = loaders.load_lims()
+        pak = loaders.load_pak()
+        rows: list[pd.DataFrame] = []
+
+        def add_lims(group_key: str, metrics: set[str], prefix: str = "") -> None:
+            group = config.LIMS_POINTS[group_key]
+            sub = lims[(lims["group"] == group) & (lims["metric"].isin(metrics))].copy()
+            if sub.empty:
+                return
+            sub["metric"] = prefix + sub["metric"]
+            sub["source"] = "LIMS"
+            sub["available_at"] = sub["timestamp"] + pd.Timedelta(
+                hours=config.LIMS_PUBLICATION_DELAY_H)
+            rows.append(sub[["timestamp", "available_at", "metric", "value", "source"]])
+
+        # Товарный продукт — то, что нормируется ТЗ.
+        add_lims("HT_PRODUCT", {"Mg.Sulfur", "95%.T", "CetaneNumber"})
+        # Сырьё на входе гидроочистки — нужно агенту качества, чтобы отделить
+        # "сера скачет из-за сырья" от "сера скачет из-за режима реактора".
+        add_lims("HT_FEED", {"Mass.Sulfur", "95%.T"}, prefix="feed_")
+
+        for short, pak_tag in config.PAK_TAGS.items():
+            coverage = config.SIGNAL_COVERAGE.get(f"PAK:{pak_tag}")
+            sub = pak[pak["metric"] == pak_tag].copy()
+            if coverage and coverage["start"]:
+                sub = sub[sub["timestamp"] >= pd.Timestamp(coverage["start"])]
+            if sub.empty:
+                continue
+            sub["metric"] = config.TARGET_METRIC if short == "sulfur" else "D15"
+            sub["source"] = "PAK"
+            sub["available_at"] = sub["timestamp"]  # ПАК без задержки публикации
+            rows.append(sub[["timestamp", "available_at", "metric", "value", "source"]])
+
+        out = pd.concat(rows, ignore_index=True).sort_values("timestamp")
+        out.to_csv(path, index=False, encoding="utf-8-sig")
+        return path
