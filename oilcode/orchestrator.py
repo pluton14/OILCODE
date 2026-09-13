@@ -8,6 +8,19 @@
 Приоритет при конфликте (прямо из ТЗ): качество и жёсткие ограничения выше
 экономики. Если агент надёжности против, а агент оптимизации нашёл выгодный
 вариант — побеждает агент надёжности.
+
+РЕАЛТАЙМ: система спроектирована как тикающая, а не как однократный скрипт
+(демо симулирует потикивание по историческим меткам времени, см.
+run_realtime_sim.py). Отсюда два следствия:
+
+  1. Калибровка агентов (fit) — ОФФЛАЙН и по расписанию, а не при каждом
+     вызове decide(). Параметры лежат в oilcode/store.py (SQLite) с
+     отметкой времени; см. config.REFIT_INTERVAL_H за обоснованием частоты.
+     decide() сам проверяет свежесть калибровки и переобучает только когда
+     она протухла — вызывающему коду думать об этом не нужно.
+  2. Каждое решение пишется в тот же store (таблица decisions) — это прямое
+     требование ТЗ показывать входные данные, оценки агентов и итоговую
+     рекомендацию так, чтобы логику можно было проверить.
 """
 
 from __future__ import annotations
@@ -22,35 +35,59 @@ from oilcode.agents.quality import QualityAgent
 from oilcode.agents.reliability import ReliabilityAgent
 from oilcode.contracts import ProcessState, Recommendation
 from oilcode.data import loaders
+from oilcode.store import Store
 
 
 class Orchestrator:
-    def __init__(self):
+    def __init__(self, store: Store | None = None):
         self.data_agent = DataAgent()
         self.quality_agent = QualityAgent()
         self.reliability_agent = ReliabilityAgent()
         self.blending_agent = BlendingAgent()
         self.optimization_agent = OptimizationAgent(blending=self.blending_agent)
-        self._fitted = False
+        self.store = store or Store()
 
-    def fit(self) -> "Orchestrator":
-        """Калибровка агентов на истории. Делается один раз при запуске."""
-        telemetry = loaders.load_telemetry()
-        self.quality_agent.fit(telemetry=telemetry)
-        self.reliability_agent.fit(telemetry=telemetry)
-        self._fitted = True
+    def fit(self, force: bool = False) -> "Orchestrator":
+        """Калибровка агентов — из хранилища, если она ещё свежая, иначе
+
+        заново на истории и сохранить. force=True игнорирует свежесть
+        (например, для первого прогона тикающего демо, где мы заведомо
+        хотим посчитать один раз на всю доступную историю).
+        """
+        reliability_state = None if force else self.store.load_model_state(
+            "reliability", config.REFIT_INTERVAL_H["reliability"])
+
+        if reliability_state is not None:
+            self.reliability_agent.quantiles = reliability_state
+        else:
+            telemetry = loaders.load_telemetry()
+            self.reliability_agent.fit(telemetry=telemetry)
+            self.quality_agent.fit(telemetry=telemetry)
+            self.store.save_model_state("reliability", self.reliability_agent.quantiles)
+
         return self
 
     def decide(self, timestamp: str | datetime) -> Recommendation:
-        if not self._fitted:
-            self.fit()
+        self.fit()  # дёшево, если калибровка свежая — проверка в store, не пересчёт
 
         state = self.data_agent.build_state(timestamp)
-        return self.decide_for_state(state)
+        verdicts: dict = {}
+        rec = self.decide_for_state(state, verdicts_out=verdicts)
+        self.store.save_decision(state.timestamp, rec, agent_verdicts=verdicts)
+        return rec
 
-    def decide_for_state(self, state: ProcessState) -> Recommendation:
+    def decide_for_state(self, state: ProcessState,
+                         verdicts_out: dict | None = None) -> Recommendation:
+        """verdicts_out — если передан dict, в него кладутся сырые вердикты
+
+        всех опрошенных агентов (data/quality/reliability/optimization).
+        Нужно для лога решений в store: ТЗ требует сохранять не только
+        итог, но и оценки агентов, а не только финальный текст.
+        """
         rec = Recommendation(timestamp=state.timestamp, status="refusal")
         rec.state_summary = self._summarize(state)
+        if verdicts_out is not None:
+            verdicts_out["data_quality"] = state.data_quality
 
         # --- Шаг 1: данные вообще пригодны? --------------------------------
         if state.data_quality.overall == "insufficient":
@@ -66,6 +103,10 @@ class Orchestrator:
         quality = self.quality_agent.assess(state)
         reliability = self.reliability_agent.assess(state)
         optimization = self.optimization_agent.optimize(state, quality, reliability)
+        if verdicts_out is not None:
+            verdicts_out["quality"] = quality
+            verdicts_out["reliability"] = reliability
+            verdicts_out["optimization"] = optimization
 
         rec.constraints_checked = [
             f"товарный продукт: сера <= {config.PRODUCT_SPEC['sulfur_mg_kg_max']} мг/кг",
