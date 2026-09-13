@@ -56,12 +56,85 @@ def _last_before(df: pd.DataFrame, ts: pd.Timestamp,
     публикуется позже). Без этой поправки мы используем лабораторный
     результат раньше, чем его мог увидеть оператор, — то есть подглядываем
     в будущее, что ТЗ прямо запрещает.
+
+    Медленный путь (полное сканирование) — остаётся для разовых вызовов
+    в экспорте. В рантайме используется _rt_* ниже: там то же правило
+    "ничего из будущего", но через двоичный поиск.
     """
     available_at = df["timestamp"] + pd.Timedelta(hours=delay_h)
     past = df[available_at <= ts]
     if past.empty:
         return None
     return past.iloc[-1]
+
+
+# ==========================================================================
+# РАНТАЙМ-ИНДЕКСЫ — то, что делает систему пригодной для тикающей работы
+# ==========================================================================
+# Проблема, которую это чинит: loaders._cached() кеширует РАЗБОР файла, но
+# не сам результат — то есть каждый вызов заново читает telemetry.csv
+# (190 тыс. строк x 97 колонок) с диска. Плюс _last_before строит булеву
+# маску по всему датафрейму на каждый запрос. На разовом прогоне это
+# незаметно, но система должна тикать каждые 15-60 минут, и там это
+# означало ~4 секунды на тик практически на пустом месте.
+#
+# Здесь таблицы поднимаются в память один раз за процесс и индексируются по
+# времени, а поиск "последнее известное на момент ts" становится двоичным
+# (np.searchsorted) вместо полного прохода.
+#
+# ВАЖНО: запрет на подглядывание в будущее никуда не делся. Правило
+# "available_at = timestamp + задержка <= ts" эквивалентно "timestamp <=
+# ts - задержка", потому что задержка постоянная. Именно вторая форма и
+# используется ниже — она позволяет искать по уже отсортированному времени
+# отбора, не пересобирая массив.
+
+
+@lru_cache(maxsize=1)
+def _rt_telemetry() -> pd.DataFrame:
+    """Телеметрия в памяти, с DatetimeIndex. Один раз за процесс."""
+    df = loaders.load_telemetry()
+    return df.set_index("timestamp").sort_index()
+
+
+@lru_cache(maxsize=1)
+def _rt_lims() -> dict[tuple[str, str], pd.DataFrame]:
+    """ЛИМС, разложенный по (точка отбора, показатель)."""
+    lims = loaders.load_lims()
+    out: dict[tuple[str, str], pd.DataFrame] = {}
+    for key, grp in lims.groupby(["group", "metric"], sort=False):
+        out[key] = grp.set_index("timestamp").sort_index()[["value"]]
+    return out
+
+
+@lru_cache(maxsize=1)
+def _rt_pak() -> dict[str, pd.DataFrame]:
+    """ПАК, разложенный по показателю."""
+    pak = loaders.load_pak()
+    return {m: g.set_index("timestamp").sort_index()[["value"]]
+            for m, g in pak.groupby("metric", sort=False)}
+
+
+def _at(df: pd.DataFrame, ts: pd.Timestamp,
+        delay_h: float = 0.0) -> tuple[pd.Timestamp, pd.Series] | None:
+    """Последняя строка, известная к моменту ts. Двоичный поиск.
+
+    Возвращает (когда измерено, строка) либо None.
+    """
+    cutoff = ts - pd.Timedelta(hours=delay_h)
+    pos = df.index.searchsorted(cutoff, side="right") - 1
+    if pos < 0:
+        return None
+    return df.index[pos], df.iloc[pos]
+
+
+def _window(df: pd.DataFrame, ts: pd.Timestamp, hours: float,
+            delay_h: float = 0.0) -> pd.DataFrame:
+    """Окно истории (ts-hours, ts]. Ничего из будущего не попадает."""
+    hi_at = ts - pd.Timedelta(hours=delay_h)
+    lo_at = hi_at - pd.Timedelta(hours=hours)
+    lo = df.index.searchsorted(lo_at, side="right")
+    hi = df.index.searchsorted(hi_at, side="right")
+    return df.iloc[lo:hi]
 
 
 @lru_cache(maxsize=1)
@@ -71,7 +144,7 @@ def _flow_medians() -> dict[str, float]:
     для определения "установка стоит". Считается один раз и кешируется:
     файл телеметрии большой, пересчитывать на каждый вызов незачем.
     """
-    telemetry = loaders.load_telemetry()
+    telemetry = _rt_telemetry()
     medians: dict[str, float] = {}
     for unit, tags in config.UNIT_FLOW_TAGS.items():
         for tag in tags:
@@ -99,22 +172,32 @@ class DataAgent:
     экспорт разделён на два файла, а не один общий.
     """
 
-    def build_state(self, timestamp: str | datetime) -> ProcessState:
-        ts = pd.Timestamp(timestamp)
+    def build_state(self, timestamp: str | datetime,
+                    history_h: float | None = None) -> ProcessState:
+        """Снимок процесса на момент ts — то, что видит оркестратор на тике.
 
-        telemetry = loaders.load_telemetry()
-        lims = loaders.load_lims()
-        pak = loaders.load_pak()
+        history_h — сколько часов истории приложить. Нужно Агенту качества:
+        качество отвечает на режим с запаздыванием 0-3ч, по одной точке
+        прогноз не строится. По умолчанию берём запас поверх максимального
+        горизонта прогноза, чтобы хватило и на лаги, и на скользящие.
+        """
+        ts = pd.Timestamp(timestamp)
+        if history_h is None:
+            history_h = config.HISTORY_WINDOW_H
+
+        telemetry = _rt_telemetry()
 
         dq = DataQuality()
-        row = _last_before(telemetry, ts)
+        found = _at(telemetry, ts)
         kip: dict[str, float] = {}
 
-        if row is None:
+        if found is None:
             dq.overall = "insufficient"
             dq.notes.append(f"Нет телеметрии на момент {ts}")
+            row_at, row = None, None
         else:
-            lag_min = (ts - row["timestamp"]).total_seconds() / 60
+            row_at, row = found
+            lag_min = (ts - row_at).total_seconds() / 60
             if lag_min > 30:
                 dq.overall = "degraded"
                 dq.notes.append(f"Телеметрия отстаёт на {lag_min:.0f} мин")
@@ -130,7 +213,24 @@ class DataAgent:
             kip = self._extract_declared_tags(row, dq)
 
         # ---- Качество: ЛИМС -> ПАК ---------------------------------------
-        quality = self._collect_quality(lims, pak, ts, dq)
+        quality = self._collect_quality(ts, dq)
+
+        # ---- Окно истории для агентов, которым нужна динамика -------------
+        history = None
+        target_history = None
+        if row is not None:
+            declared = [config.tag_key(t, u) for t, u, _ in
+                        config.QUALITY_AGENT_TAGS + config.RELIABILITY_AGENT_TAGS]
+            cols = [c for c in dict.fromkeys(declared) if c in telemetry.columns]
+            window = _window(telemetry, ts, history_h)[cols]
+            # Заглушки не должны уехать в модель как измерения — здесь это
+            # делается разом по всему окну, а не по одной точке.
+            history = window.replace(list(config.SENTINEL_VALUES), pd.NA)
+
+            pak_sulfur = _rt_pak().get(config.PAK_TAGS["sulfur"])
+            if pak_sulfur is not None:
+                tgt = _window(pak_sulfur, ts, history_h)["value"]
+                target_history = tgt.replace(list(config.SENTINEL_VALUES), pd.NA)
 
         # ---- Итоговый вердикт ----------------------------------------------
         if config.TARGET_METRIC not in quality:
@@ -147,7 +247,8 @@ class DataAgent:
             dq.overall = "degraded"
 
         return ProcessState(timestamp=ts.to_pydatetime(), kip=kip,
-                            quality=quality, data_quality=dq)
+                            quality=quality, data_quality=dq,
+                            history=history, target_history=target_history)
 
     # ------------------------------------------------------------------
     # Работает ли установка
@@ -210,22 +311,29 @@ class DataAgent:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _collect_quality(lims: pd.DataFrame, pak: pd.DataFrame, ts: pd.Timestamp,
-                         dq: DataQuality) -> dict[str, Measurement]:
-        quality: dict[str, Measurement] = {}
+    def _collect_quality(ts: pd.Timestamp, dq: DataQuality) -> dict[str, Measurement]:
+        """Показатели качества на момент ts: ЛИМС в приоритете, ПАК подменяет
 
+        там, где лабораторного результата нет или он устарел.
+        Работает по рантайм-индексам (_rt_lims/_rt_pak) — двоичный поиск
+        вместо прохода по всей таблице на каждый показатель.
+        """
+        quality: dict[str, Measurement] = {}
         target_group = config.LIMS_POINTS[config.TARGET_POINT]
-        for metric in sorted(lims[lims["group"] == target_group]["metric"].unique()):
-            subset = lims[(lims["group"] == target_group) & (lims["metric"] == metric)]
-            last = _last_before(subset, ts, delay_h=config.LIMS_PUBLICATION_DELAY_H)
-            if last is None:
+
+        for (group, metric), df in sorted(_rt_lims().items()):
+            if group != target_group:
                 continue
+            found = _at(df, ts, delay_h=config.LIMS_PUBLICATION_DELAY_H)
+            if found is None:
+                continue
+            measured_at, rec = found
             # Возраст считаем от МОМЕНТА ОТБОРА: оператору важно, насколько
             # устарела сама проба, а не когда её напечатали.
-            age_h = (ts - last["timestamp"]).total_seconds() / 3600
+            age_h = (ts - measured_at).total_seconds() / 3600
             quality[metric] = Measurement(
-                value=float(last["value"]), source="LIMS",
-                measured_at=last["timestamp"].to_pydatetime(), age_hours=age_h,
+                value=float(rec["value"]), source="LIMS",
+                measured_at=measured_at.to_pydatetime(), age_hours=age_h,
             )
             # Порог свежести свой у каждого показателя: CetaneNumber меряют
             # раз в 29 суток, и общий 48-часовой порог объявлял бы его
@@ -236,25 +344,27 @@ class DataAgent:
                 dq.stale_measurements.append(f"LIMS:{metric} ({age_h:.0f}ч)")
 
         # ПАК заменяет ЛИМС там, где лабораторный результат устарел или его нет.
+        pak_index = _rt_pak()
         for short, pak_tag in config.PAK_TAGS.items():
             coverage = config.SIGNAL_COVERAGE.get(f"PAK:{pak_tag}")
             if coverage and coverage["start"] and ts < pd.Timestamp(coverage["start"]):
                 dq.notes.append(f"ПАК {pak_tag}: {coverage['note']}")
                 continue
 
-            subset = pak[pak["metric"] == pak_tag]
-            last = _last_before(subset, ts)
-            if last is None:
+            df = pak_index.get(pak_tag)
+            found = _at(df, ts) if df is not None else None
+            if found is None:
                 dq.notes.append(f"ПАК {pak_tag}: нет данных на этот момент")
                 continue
-            age_h = (ts - last["timestamp"]).total_seconds() / 3600
+            measured_at, rec = found
+            age_h = (ts - measured_at).total_seconds() / 3600
 
             metric_key = config.TARGET_METRIC if short == "sulfur" else "D15"
             existing = quality.get(metric_key)
             if existing is None or (existing.age_hours or 1e9) > age_h:
                 quality[metric_key] = Measurement(
-                    value=float(last["value"]), source="PAK",
-                    measured_at=last["timestamp"].to_pydatetime(), age_hours=age_h,
+                    value=float(rec["value"]), source="PAK",
+                    measured_at=measured_at.to_pydatetime(), age_hours=age_h,
                 )
             if age_h * 60 > config.FRESHNESS["pak_max_age_min"]:
                 dq.stale_measurements.append(f"PAK:{pak_tag} ({age_h:.1f}ч)")
@@ -367,17 +477,18 @@ class DataAgent:
         return flags
 
     @classmethod
-    def _export_dataset(cls, telemetry: pd.DataFrame, running: pd.DataFrame,
-                        excluded: list[dict], tag_specs: list[tuple[str, str, str]],
-                        path: Path, agent_name: str,
-                        lab_metrics: dict[str, str] | None) -> Path:
-        """Один файл — один агент, .xlsx с двумя листами.
+    def _clean_frame(cls, telemetry: pd.DataFrame, running: pd.DataFrame,
+                     tag_specs: list[tuple[str, str, str]],
+                     lab_metrics: dict[str, str] | None) -> pd.DataFrame:
+        """Подготовленная таблица по списку тегов: заглушки убраны, простои и
 
-        CSV с текстовой шапкой (#-строки) в Excel открывался криво — Excel
-        не понимает конвенцию комментариев и сдвигает колонки. Поэтому:
-        лист "Данные" — чистая таблица без единой лишней строки сверху,
-        лист "Справка" — источник каждого тега и исключённые даты, отдельно,
-        не мешая данным. Один файл на агента, как и было договорено.
+        первые сутки после пуска занулены, лабораторные метрики подмешаны
+        по правилу "самый свежий известный источник".
+
+        Это ОДИН И ТОТ ЖЕ код и для выгрузки в xlsx, и для обучения моделей
+        в памяти (training_frame). Специально один: если бы обучение чистило
+        данные само, оно бы рано или поздно разъехалось с тем, что лежит в
+        файле у коллег, и расхождение искали бы неделю.
         """
         keys = [config.tag_key(t, u) for t, u, _ in tag_specs]
         keys = [k for k in keys if k in telemetry.columns]
@@ -403,7 +514,39 @@ class DataAgent:
                 value, source = cls._merged_lab_metric(metric, out.index)
                 out[out_col] = value
                 out[f"{out_col}_source"] = source
+        return out
 
+    @classmethod
+    def training_frame(cls, tag_specs: list[tuple[str, str, str]] | None = None,
+                       lab_metrics: dict[str, str] | None = None) -> pd.DataFrame:
+        """Готовая таблица для ОБУЧЕНИЯ моделей — в памяти, не через xlsx.
+
+        Раньше единственным способом получить подготовленные данные была
+        выгрузка в файл: годится, чтобы отдать коллегам, но не годится для
+        тикающей системы, которой надо переобучиться прямо в процессе.
+        Чистка здесь ровно та же (_clean_frame), файл и память не разъедутся.
+        """
+        tag_specs = tag_specs or config.QUALITY_AGENT_TAGS
+        if lab_metrics is None:
+            lab_metrics = {"sulfur_mg_kg": "Mg.Sulfur", "t95_c": "95%.T"}
+        telemetry = _rt_telemetry().replace(list(config.SENTINEL_VALUES), pd.NA)
+        running = cls._running_flags_series(telemetry)
+        return cls._clean_frame(telemetry, running, tag_specs, lab_metrics)
+
+    @classmethod
+    def _export_dataset(cls, telemetry: pd.DataFrame, running: pd.DataFrame,
+                        excluded: list[dict], tag_specs: list[tuple[str, str, str]],
+                        path: Path, agent_name: str,
+                        lab_metrics: dict[str, str] | None) -> Path:
+        """Один файл — один агент, .xlsx с двумя листами.
+
+        CSV с текстовой шапкой (#-строки) в Excel открывался криво — Excel
+        не понимает конвенцию комментариев и сдвигает колонки. Поэтому:
+        лист "Данные" — чистая таблица без единой лишней строки сверху,
+        лист "Справка" — источник каждого тега и исключённые даты, отдельно,
+        не мешая данным. Один файл на агента, как и было договорено.
+        """
+        out = cls._clean_frame(telemetry, running, tag_specs, lab_metrics)
         out = out.reset_index().rename(columns={"index": "timestamp"})
         info = cls._dataset_info_sheet(agent_name, tag_specs, excluded, lab_metrics)
         cls._write_workbook(out, info, path, agent_name)

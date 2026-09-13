@@ -54,16 +54,30 @@ class Orchestrator:
         (например, для первого прогона тикающего демо, где мы заведомо
         хотим посчитать один раз на всю доступную историю).
         """
-        reliability_state = None if force else self.store.load_model_state(
+        rel_state = None if force else self.store.load_model_state(
             "reliability", config.REFIT_INTERVAL_H["reliability"])
+        qual_state = None if force else self.store.load_model_state(
+            "quality", config.REFIT_INTERVAL_H["quality"])
 
-        if reliability_state is not None:
-            self.reliability_agent.quantiles = reliability_state
-        else:
+        # Тяжёлые данные поднимаем только если хоть кому-то надо переучиться.
+        need_data = rel_state is None or qual_state is None
+        frame = telemetry = None
+        if need_data:
+            from oilcode.agents.data import DataAgent
             telemetry = loaders.load_telemetry()
+            frame = DataAgent.training_frame()
+
+        if rel_state is not None:
+            self.reliability_agent.quantiles = rel_state
+        else:
             self.reliability_agent.fit(telemetry=telemetry)
-            self.quality_agent.fit(telemetry=telemetry)
             self.store.save_model_state("reliability", self.reliability_agent.quantiles)
+
+        if qual_state is not None:
+            self.quality_agent.load_state(qual_state)
+        else:
+            self.quality_agent.fit(frame=frame)
+            self.store.save_model_state("quality", self.quality_agent.state_dict())
 
         return self
 

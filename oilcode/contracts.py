@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
+import pandas as pd
+
 Confidence = Literal["ok", "degraded", "insufficient"]
 Severity = Literal["normal", "elevated", "severe"]
 
@@ -61,12 +63,28 @@ class DataQuality:
 
 @dataclass
 class ProcessState:
-    """Снимок процесса на момент времени. Единственный вход для агентов."""
+    """Снимок процесса на момент времени. Единственный вход для агентов.
+
+    ПОЧЕМУ ЗДЕСЬ ЕСТЬ ИСТОРИЯ, А НЕ ТОЛЬКО ТОЧКА.
+    Качество отвечает на изменение режима с запаздыванием 0-3 часа, поэтому
+    по одному мгновенному срезу тегов прогноз не строится в принципе — нужны
+    окна и лаги. Раньше каждый агент решал бы это сам, лазая в телеметрию в
+    обход Агента данных; теперь окно приезжает готовым, уже очищенным от
+    заглушек и простоев, и правило "никто кроме Агента данных не читает
+    сырые файлы" остаётся в силе.
+
+    history — DataFrame с DatetimeIndex по тегам (колонки — ключи как в kip),
+    строго ДО timestamp включительно. Ничего из будущего в нём нет.
+    """
 
     timestamp: datetime
     kip: dict[str, float] = field(default_factory=dict)
     quality: dict[str, Measurement] = field(default_factory=dict)
     data_quality: DataQuality = field(default_factory=DataQuality)
+    history: "pd.DataFrame | None" = None
+    # История целевого показателя (сера) — отдельно, потому что живёт в
+    # другом темпе: ПАК раз в 10 минут, ЛИМС раз в сутки.
+    target_history: "pd.Series | None" = None
 
     def get(self, tag: str, default: float | None = None) -> float | None:
         return self.kip.get(tag, default)
@@ -79,9 +97,21 @@ class ProcessState:
 
 @dataclass
 class Prediction:
+    """Одно предсказание показателя на один горизонт.
+
+    lo/hi — интервал, а не украшение: агент оптимизации обязан считать риск
+    по верхней границе, иначе рекомендация "запас 0.3 мг/кг" выглядит
+    безопасной, хотя разброс модели ±2.
+    basis — на чём построено, чтобы в логе решений было видно, сработала
+    режимная модель или мы упали на инерцию.
+    """
+
     value: float
     confidence: float
     horizon_min: int = 0
+    lo: float | None = None
+    hi: float | None = None
+    basis: str = ""
 
 
 @dataclass
@@ -94,11 +124,22 @@ class SpecRisk:
 
 @dataclass
 class QualityAssessment:
-    """Выход агента качества."""
+    """Выход агента качества.
+
+    predictions — заголовочный прогноз по каждому показателю (на основном
+    горизонте). forecast — тот же прогноз, но по всем горизонтам сразу:
+    на 1ч инерция процесса почти непобедима, на 3ч у режимной модели
+    появляется шанс, и оператору важно видеть это раздельно.
+    """
 
     predictions: dict[str, Prediction] = field(default_factory=dict)
+    forecast: dict[str, list[Prediction]] = field(default_factory=dict)
     spec_risk: dict[str, SpecRisk] = field(default_factory=dict)
     data_confidence: Confidence = "ok"
+    # Насколько модель обыграла инерцию на валидации, в процентах MAE.
+    # Отрицательное значение — модель хуже инерции, и тогда она не
+    # применяется вовсе (см. QualityAgent.fit).
+    model_gain_pct: dict[int, float] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
 
